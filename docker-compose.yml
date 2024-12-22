@@ -1,0 +1,112 @@
+networks:
+  chatly-network:
+    driver: bridge
+
+services:
+
+  php:
+    container_name: chatly-php-app
+    build:
+      context: .
+      target: php
+      args:
+        - APP_ENV=${APP_ENV}
+    environment:
+      - APP_ENV=${APP_ENV}
+      - CONTAINER_ROLE=app
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    depends_on:
+      - database
+      - redis
+    networks:
+      - chatly-network
+
+  database:
+    image: mysql:8.3
+    container_name: chatly-mysql-database
+    restart: unless-stopped
+    ports:
+      - 3306:3306
+    networks:
+      - chatly-network
+    environment:
+      - MYSQL_DATABASE=${DB_DATABASE}
+      - MYSQL_USER=${DB_USERNAME}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - 8000:80
+    networks:
+      - chatly-network
+    volumes:
+      - ./:/var/www
+      - ./Docker/nginx/conf.d/:/etc/nginx/conf.d/
+    depends_on:
+      - php
+
+  redis:
+    image: redis:alpine
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+    networks:
+      - chatly-network
+    ports:
+      - 6379:6379
+
+  reverb:
+    build:
+      context: .
+      target: php
+      args:
+        - APP_ENV=${APP_ENV}
+    environment:
+      - APP_ENV=${APP_ENV}
+      - CONTAINER_ROLE=reverb
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    ports:
+      - 6001:6001
+    depends_on:
+      - php
+    tty: true
+    networks:
+      - chatly-network
+
+  queue:
+    build:
+      context: .
+      target: php
+      args:
+        - APP_ENV=${APP_ENV}
+    environment:
+      - APP_ENV=${APP_ENV}
+      - CONTAINER_ROLE=queue
+    working_dir: /var/www
+    volumes:
+      - .:/var/www
+    depends_on:
+      - php
+    networks:
+      - chatly-network
+
+  node:
+    build:
+      context: .
+      target: node
+    volumes:
+      - .:/usr/src
+      - ./node_modules:/usr/src/node_modules
+    tty: true
+    networks:
+      - chatly-network
+
+volumes:
+  db-data: ~
